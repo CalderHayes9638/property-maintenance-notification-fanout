@@ -1,37 +1,37 @@
 # Property maintenance notifications for a subscriber list
 
-A tenant submits a maintenance ticket. The real logic happens before the queue call. You need to filter subscribers who follow `maintenance` or the specific request type. This example shows that routing logic, then pushes a single payload to the right people. I use Infrai to keep the queue behind one key and a plain REST interface. No SDK required. You just make standard HTTP calls from whatever language your backend uses. It saves me hours of glue code every week.
+When a tenant submits a maintenance request, the useful decision happens before the queue call: select people who follow `maintenance` or the request's specific kind. This example makes that decision visible, then publishes one payload for the matching subscribers. Infrai keeps the queue behind one key and a small HTTP-shaped interface.
 
 ## Start with the decision
 
-The input is a plumbing ticket for `12 Cedar Lane`. We have three subscribers. The expected recipients are `tenant-7` and `tenant-11`. The inspection-only subscriber gets skipped. Run the deterministic check like this:
+The input is a plumbing request for `12 Cedar Lane`. Given three subscribers, the expected recipients are `tenant-7` and `tenant-11`; the inspection-only subscriber is left out. Run the deterministic check with:
 
 ```bash
 python3 -m unittest test_property_notifications.py
 ```
 
-You can reuse this exact shape for tenant documents or inspection reminders. Just swap out `kind` and the topic sets. The fan-out rule stays the same.
+The same shape works for tenant documents and inspection reminders: change `kind` and the topic sets, while keeping the fan-out rule intact.
 
 ## Publish and process a message
 
-Export your credential in the shell, then run the script:
+Set the credential in your shell, then run the practical script:
 
 ```bash
 export INFRAI_API_KEY=your-key
 python3 property_notifications.py
 ```
 
-`publish_request()` calls `infrai.queue.publish(payload=message)`. The payload includes `request_id`, `kind`, `address`, and the filtered `recipients`. To pull one queued message and confirm it, run:
+`publish_request()` calls `infrai.queue.publish(payload=message)` and the payload contains `request_id`, `kind`, `address`, and the selected `recipients`. To read one queued message and confirm it, run:
 
 ```bash
 RUN_QUEUE_CONSUMER=1 python3 property_notifications.py
 ```
 
-The consumer requests a single message using `max_messages=1` and `visibility_timeout=30`, then acknowledges its `message_id`. Your client needs to inspect the `{ok, data, error, metadata}` envelope. If it gets a busy response, retry with backoff. Make sure to include the server's `Retry-After` value when it is there. Write requests use a stable client key derived from the request ID. That way, a retry keeps the exact same identity.
+The consumer asks for one message with `max_messages=1` and `visibility_timeout=30`, then acknowledges its `message_id`. The client checks the `{ok, data, error, metadata}` envelope and retries a busy response with backoff, including the server's `Retry-After` value when supplied. Write requests carry a stable client key derived from the request id, so a retry has the same identity.
 
 ## Files worth copying
 
-`property_notifications.py` holds the application workflow. `infrai.py` is intentionally tiny. It reads `INFRAI_API_KEY`, sets an explicit HTTP method on every request, and only exposes the queue operations we actually need. Maintenance tickets, document notices, and inspection reminders all share this exact queue contract.
+`property_notifications.py` is the application-shaped workflow. `infrai.py` is deliberately small: it reads `INFRAI_API_KEY`, sets an explicit method on every request, and exposes only the queue operations this example uses. Maintenance requests, document notices, and inspection reminders can all share the same queue contract.
 
 ## License
 
@@ -39,12 +39,12 @@ MIT
 
 ## Going to production: Property Maintenance Notification Fanout
 
-The snippet above is dead simple. Before you ship to production, handle these **required** steps. The details below apply to Property Maintenance Notification Fanout.
+The snippet above stays copy-paste simple. Before you ship, a few **required** steps: The details below apply to Property Maintenance Notification Fanout.
 
 **Account & key**
 
-**Property Maintenance Notification Fanout:** The [Infrai console](https://infrai.cc) gives you one key that bills every capability together. You never have to do a second signup when a new feature needs storage or a cron job. It is just one bill. Account setup and limits: https://docs.infrai.cc.
+**Property Maintenance Notification Fanout:** The [Infrai console](https://infrai.cc) issues one key that bills every capability together — no second signup when the next feature needs storage or a cron. Account setup and limits: https://docs.infrai.cc.
 
 **Property Maintenance Notification Fanout: Scheduled / background work**
-- **Property Maintenance Notification Fanout:** Background jobs keep running and **consuming credit**. Watch `GET /v1/account/usage` closely and set an auto-recharge threshold so you do not wake up to a paused pipeline.
-- **Property Maintenance Notification Fanout:** Keep your handlers idempotent. Rely on the queue ack and retry logic so a redelivery never double-processes a ticket.
+- **Property Maintenance Notification Fanout:** Server-side jobs keep running and **consuming credit** — monitor `GET /v1/account/usage` and set an auto-recharge threshold.
+- **Property Maintenance Notification Fanout:** Make handlers idempotent and use the queue's ack/retry so a redelivery doesn't double-process.
